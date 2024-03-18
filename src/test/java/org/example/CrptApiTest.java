@@ -1,61 +1,105 @@
 package org.example;
 
-import com.google.gson.Gson;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 class CrptApiTest {
-
     private static CrptApi.Document document;
-    private static String signature;
+
     @BeforeAll
     static void beforeAll() {
-        String json = "{\n" +
-                "  \"description\": {\n" +
-                "    \"participantInn\": \"string\"\n" +
-                "  },\n" +
-                "  \"doc_id\": \"string\",\n" +
-                "  \"doc_status\": \"string\",\n" +
-                "  \"doc_type\": \"LP_INTRODUCE_GOODS\",\n" +
-                "  \"importRequest\": true,\n" +
-                "  \"owner_inn\": \"string\",\n" +
-                "  \"participant_inn\": \"string\",\n" +
-                "  \"producer_inn\": \"string\",\n" +
-                "  \"production_date\": \"2020-01-23\",\n" +
-                "  \"production_type\": \"string\",\n" +
-                "  \"products\": [\n" +
-                "    {\n" +
-                "      \"certificate_document\": \"string\",\n" +
-                "      \"certificate_document_date\": \"2020-01-23\",\n" +
-                "      \"certificate_document_number\": \"string\",\n" +
-                "      \"owner_inn\": \"string\",\n" +
-                "      \"producer_inn\": \"string\",\n" +
-                "      \"production_date\": \"2020-01-23\",\n" +
-                "      \"tnved_code\": \"string\",\n" +
-                "      \"uit_code\": \"string\",\n" +
-                "      \"uitu_code\": \"string\"\n" +
-                "    }\n" +
-                "  ],\n" +
-                "  \"reg_date\": \"2020-01-23\",\n" +
-                "  \"reg_number\": \"string\"\n" +
-                "}";
-        Gson gson = new Gson();
-
-        document = gson.fromJson(json, CrptApi.Document.class);
-        signature = "";
+        document = CrptApi.Document
+                .builder()
+                .description(CrptApi.Description.builder()
+                        .participantInn("123")
+                        .build())
+                .docId("123")
+                .docStatus("good")
+                .docType("232")
+                .importRequest(true)
+                .ownerInn("sdsa")
+                .participantInn("weqweqw")
+                .producerInn("ewrwe")
+                .productionDate("erwtwe")
+                .productionType("gdfgdf")
+                .products(new ArrayList<>(Collections.singleton(CrptApi.Product.builder()
+                        .certificateDocument("wdsw")
+                        .certificateDocumentDate("dgfsd")
+                        .certificateDocumentNumber("erwe")
+                        .ownerInn("ertwerw")
+                        .producerInn("dgds")
+                        .productionDate("ewrwe")
+                        .tnvedCode("gfdgfd")
+                        .uitCode("dfsd")
+                        .uituCode("dgdfgdf")
+                        .build())))
+                .regDate("3435")
+                .regNumber("3423")
+                .build();
     }
 
     @Test
-    public void testRequestForDocument() {
+    void testCheckResponseForDocumentRequest() {
         TimeUnit timeUnit = TimeUnit.valueOf("SECONDS");
-        CrptApi crptApi = new CrptApi(timeUnit, 2);
-        crptApi.createDocument(document, signature);
+        CrptApi crptApi = new CrptApi(timeUnit, 1000, 1);
+        crptApi.createDocument(document).run();
     }
 
     @Test
-    public void checkTimeUnit() {
+    void testTimedSemaphoreWhenActualSlotsLessExpectedSlots() {
         TimeUnit timeUnit = TimeUnit.valueOf("SECONDS");
+        int actualSlots = 30;
+        ExecutorService executorService = Executors.newFixedThreadPool(actualSlots);
+
+        int expectedSlots = 40;
+        CrptApi crptApi = new CrptApi(timeUnit, 1, expectedSlots);
+
+        IntStream.range(0, actualSlots)
+                .forEach(user -> executorService.execute(crptApi.createDocument(document)));
+        executorService.shutdown();
+
+        assertTrue(crptApi.timedSemaphore.tryAcquire());
+    }
+
+    @Test
+    void testTimedSemaphoreWhenActualSlotsMoreExpectedSlots() {
+        TimeUnit timeUnit = TimeUnit.valueOf("SECONDS");
+        int actualSlots = 81;
+        ExecutorService executorService = Executors.newFixedThreadPool(actualSlots);
+
+        int expectedSlots = 40;
+        CrptApi crptApi = new CrptApi(timeUnit, 1, expectedSlots);
+
+        IntStream.range(0, actualSlots)
+                .forEach(user -> executorService.execute(crptApi.createDocument(document)));
+        executorService.shutdown();
+
+        assertFalse(crptApi.timedSemaphore.tryAcquire());
+    }
+
+    @Test
+    public void testTimedSemaphoreWhenTimeLimitExceeded() {
+        TimeUnit timeUnit = TimeUnit.valueOf("MILLISECONDS");
+        int actualSlots = 300;
+        ExecutorService executorService = Executors.newFixedThreadPool(actualSlots);
+
+        int expectedSlots = 400;
+        CrptApi crptApi = new CrptApi(timeUnit, 50, expectedSlots);
+
+        IntStream.range(0, actualSlots)
+                .forEach(user -> executorService.execute(crptApi.createDocument(document)));
+        executorService.shutdown();
+
+        int availablePermits = crptApi.timedSemaphore.getAvailablePermits();
+        assertNotEquals(availablePermits, 0);
     }
 }

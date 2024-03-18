@@ -1,95 +1,110 @@
 package org.example;
 
 import com.google.gson.annotations.SerializedName;
+import lombok.Builder;
+import lombok.Data;
+import org.apache.commons.lang3.concurrent.TimedSemaphore;
+import retrofit2.Call;
+import retrofit2.Response;
 import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.http.Body;
 import retrofit2.http.POST;
-import retrofit2.http.Path;
 
-import java.util.ArrayList;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class CrptApi {
-    private final TimeUnit timeUnit;
-    private final int requestLimit;
-    private long startTime;
-    private long endTime;
+    private Logger logger = Logger.getLogger(CrptApi.class.getName());
+    final TimedSemaphore timedSemaphore;
 
-    public CrptApi(final TimeUnit timeUnit, final int requestLimit) {
-        this.timeUnit = timeUnit;
-        this.requestLimit = requestLimit;
-
-        startTime = System.currentTimeMillis();
+    public CrptApi(final TimeUnit timeUnit,
+                   final int timePeriod,
+                   final int requestLimit) {
+        timedSemaphore = new TimedSemaphore(timePeriod, timeUnit, requestLimit);
     }
 
-    public void createDocument(Document document, String signature) {
-        endTime = System.currentTimeMillis();
-//        if (endTime - startTime < timeUnit) {
-//
-//        }
-//        Использование симафора Semaphore
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://ismp.crpt.ru/api/")
-                .build();
+    public Runnable createDocument(Document document) {
+        return () -> {
+            if(timedSemaphore.tryAcquire()) {
+                Retrofit retrofit = new Retrofit.Builder()
+                        .addConverterFactory(GsonConverterFactory.create())
+                        .baseUrl("https://ismp.crpt.ru/api/")
+                        .build();
+                CrptService service = retrofit.create(CrptService.class);
+                Call<String> call = service.createDocument(document);
 
-        CrptService service = retrofit.create(CrptService.class);
-        service.createDocument(document, signature);
+                try {
+                    Response<String> response = call.execute();
+                    logger.log(Level.INFO, response.message());
+                } catch (IOException e) {
+                    logger.log(Level.WARNING, e.getMessage());
+                }
+            }
+        };
     }
 
-    class Document {
-        private Description description;
+    @Builder
+    static class Document {
+        Description description;
         @SerializedName("doc_id")
-        private String docId;
+        String docId;
         @SerializedName("doc_status")
-        private String docStatus;
+        String docStatus;
         @SerializedName("doc_type")
-        private String docType;
-        private boolean importRequest;
+        String docType;
+        boolean importRequest;
         @SerializedName("owner_inn")
-        private String ownerInn;
+        String ownerInn;
         @SerializedName("participant_inn")
-        private String participantInn;
+        String participantInn;
         @SerializedName("producer_inn")
-        private String producerInn;
+        String producerInn;
         @SerializedName("production_date")
-        private String productionDate;
+        String productionDate;
         @SerializedName("production_type")
-        private String productionType;
-        private List<Product> products = new ArrayList<>();
+        String productionType;
+        List<Product> products;
         @SerializedName("reg_date")
-        private String regDate;
+        String regDate;
         @SerializedName("reg_number")
-        private String regNumber;
+        String regNumber;
     }
 
-    private class Description {
-        private String participantInn;
+    @Builder
+    @Data
+    static class Description {
+        String participantInn;
     }
 
-    private class Product {
+    @Builder
+    @Data
+    static class Product {
         @SerializedName("certificate_document")
-        private String certificateDocument;
+        String certificateDocument;
         @SerializedName("certificate_document_date")
-        private String certificateDocumentDate;
+        String certificateDocumentDate;
         @SerializedName("certificate_document_number")
-        private String certificateDocumentNumber;
+        String certificateDocumentNumber;
         @SerializedName("owner_inn")
-        private String ownerInn;
+        String ownerInn;
         @SerializedName("producer_inn")
-        private String producerInn;
+        String producerInn;
         @SerializedName("production_date")
-        private String productionDate;
+        String productionDate;
         @SerializedName("tnved_code")
-        private String tnvedCode;
+        String tnvedCode;
         @SerializedName("uit_code")
-        private String uitCode;
+        String uitCode;
         @SerializedName("uitu_code")
-        private String uituCode;
+        String uituCode;
     }
 
     private interface CrptService {
         @POST("v3/lk/documents/create")
-        void createDocument(@Path("document") Document document,
-                            @Path("signature") String signature);
+        Call<String> createDocument(@Body Document document);
     }
 }
